@@ -15,7 +15,6 @@ library(tidyverse)
 library(dplyr)
 library(readr)
 library(ggplot2)
-library(qdapDictionaries)
 
 # Read the datasets we specified
 
@@ -35,12 +34,16 @@ NewsAggregatorDataset <- read_csv("data/news-aggregator-dataset.csv")
 AllTheNews <- rename(AllTheNews, text = content)
 
 # Remove the 22 NA rows from OnlineNewsPopularity
+
+sum(is.na(OnlineNewsPopularity$text) == TRUE)
 OnlineNewsPopularity <- filter(OnlineNewsPopularity, is.na(OnlineNewsPopularity$text) == FALSE)
+sum(is.na(OnlineNewsPopularity$text) == TRUE)
 
 OnlineNewsPopularity <- rename(OnlineNewsPopularity, subjectivity = global_subjectivity, polarity = global_sentiment_polarity)
 
-# Remove the 6933 rows with date issues from AllTheNews
+nrow(filter(AllTheNews, AllTheNews$day_of_week == -1))
 AllTheNews <- filter(AllTheNews, AllTheNews$day_of_week != -1)
+nrow(filter(AllTheNews, AllTheNews$day_of_week == -1))
 
 AllTheNews$date <- as.Date(AllTheNews$date)
 NewsAggregatorDataset$date <- as.Date(NewsAggregatorDataset$date)
@@ -56,33 +59,24 @@ OnlineNewsPopularity$year <- as.numeric(format(OnlineNewsPopularity$date, format
 
 OnlineNewsPopularity$day_of_week <- 0 * OnlineNewsPopularity$weekday_is_monday + 1 * OnlineNewsPopularity$weekday_is_tuesday + 2 * OnlineNewsPopularity$weekday_is_wednesday + 3 * OnlineNewsPopularity$weekday_is_thursday + 4 * OnlineNewsPopularity$weekday_is_friday + 5 * OnlineNewsPopularity$weekday_is_saturday + 6 * OnlineNewsPopularity$weekday_is_sunday
 
-NewsAggregatorDataset <- rename(NewsAggregatorDataset, id = ID, title = TITLE, url = URL, publisher = PUBLISHER, category = CATEGORY, story = STORY, hostname = HOSTNAME, timestamp = TIMESTAMP, text = text, subjectivity = subjectivity, polarity = polarity)
+NewsAggregatorDataset <- rename(NewsAggregatorDataset, id = ID, title = TITLE, url = URL, publisher = PUBLISHER, category = CATEGORY, story = STORY, hostname = HOSTNAME, timestamp = TIMESTAMP)
 
-# NewsAggregatorDataset$subjectivity <- NA
-# NewsAggregatorDataset$polarity <- NA
-
-# Remove the rows with no text from NewsAggregatorDataset
-NewsAggregatorDataset <- filter(NewsAggregatorDataset, is.na(NewsAggregatorDataset$text) == FALSE)
-
-AllTheNews <- select(AllTheNews, title, date, year, month, day, day_of_week, url, textfixed, subjectivity, polarity)
-AllTheNews <- AllTheNews %>% rename(text=textfixed)
-OnlineNewsPopularity <- select(OnlineNewsPopularity, title, date, year, month, day, day_of_week, url, text, subjectivity, polarity)
-NewsAggregatorDataset <- select(NewsAggregatorDataset, title, date, year, month, day, day_of_week, url, text, subjectivity, polarity)
-
-AllTheNews <- AllTheNews %>% sample_n(10000)
-OnlineNewsPopularity <- OnlineNewsPopularity %>% sample_n(10000)
-NewsAggregatorDataset <- NewsAggregatorDataset %>% sample_n(10000)
+NewsAggregatorDataset$text <- NA
+NewsAggregatorDataset$subjectivity <- NA
+NewsAggregatorDataset$polarity <- NA
 
 AllTheNews2 <- AllTheNews
 AllTheNews3 <- AllTheNews
 
-# news = rbind(OnlineNewsPopularity, NewsAggregatorDataset)
-news <- rbind(AllTheNews, OnlineNewsPopularity, NewsAggregatorDataset)
+AllTheNews <- select(AllTheNews, title, date, year, month, day, day_of_week, url, text, subjectivity, polarity)
+OnlineNewsPopularity <- select(OnlineNewsPopularity, title, date, year, month, day, day_of_week, url, text, subjectivity, polarity)
+NewsAggregatorDataset <- select(NewsAggregatorDataset, title, date, year, month, day, day_of_week, url, text, subjectivity, polarity)
 
-news <- mutate(news,
-  numwords = map_int(str_split(text, boundary("word")), length),
-  lenwords = map(str_split(text, boundary("word")), ~ str_count(., "[A-z]")), avgLenWords = map_dbl(lenwords, mean)
-)
+news = rbind(OnlineNewsPopularity, NewsAggregatorDataset)
+#news = rbind(AllTheNews, OnlineNewsPopularity, NewsAggregatorDataset)
+
+news <- mutate(news, numwords = map_int(str_split(text,boundary("word")),length),
+               lenwords = map(str_split(text,boundary("word")), ~ str_count(., "[A-z]")),                   avgLenWords = map_dbl(lenwords, mean))
 
 news$month <- as.factor(news$month)
 news$numwords <- as.numeric(news$numwords)
@@ -92,7 +86,9 @@ news$year <- as.factor(news$year)
 
 news$date <- as.Date(news$date)
 
-news <- filter(news, (news$numwords >= 5) & (news$numwords <= 5000))
+news2 <- filter(news,(news$numwords >= 5) & (news$numwords <= 5000))
+
+
 ```
 ### Initial Data Visualization/Summaries, Raw Counts
 
@@ -100,99 +96,64 @@ We wanted to get a feel for our data by seeing what times many of the observatio
 
 # Number of Stories by Year
 ```{r}
-news %>%
-  group_by(year) %>%
-  summarise(count = n()) %>%
-  ggplot(aes(year, count, fill = year)) +
-  geom_bar(stat = "identity")
+news %>% group_by(year) %>% summarise(count = n()) %>% ggplot(aes(year, count, fill=year)) + geom_bar(stat="identity")
 ```
 
 # Number of Stories by Month
 ```{r}
-news %>%
-  group_by(month) %>%
-  summarise(count = n()) %>%
-  ggplot(aes(month, count, fill = month)) +
-  geom_bar(stat = "identity")
+news %>% group_by(month) %>% summarise(count = n()) %>% ggplot(aes(month, count, fill=month)) + geom_bar(stat="identity")
 ```
 
 # Number of Stories by Day (numerical)
 ```{r}
-news %>%
-  group_by(day) %>%
-  summarise(count = n()) %>%
-  ggplot(aes(day, count, fill = day)) +
-  geom_bar(stat = "identity")
+news %>% group_by(day) %>% summarise(count = n()) %>% ggplot(aes(day, count, fill=day)) + geom_bar(stat="identity")
 ```
 
 # Number of Stories by Day (of week)
 ```{r}
-news %>%
-  group_by(day_of_week) %>%
-  summarise(count = n()) %>%
-  ggplot(aes(day_of_week, count, fill = day_of_week)) +
-  geom_bar(stat = "identity")
+news %>% group_by(day_of_week) %>% summarise(count = n()) %>% ggplot(aes(day_of_week, count, fill=day_of_week)) + geom_bar(stat="identity")
 ```
 
 
 ### Plotting the number of words by weekday, year, and month
 
 ```{r}
-ggplot(news, aes(x = year, y = numwords, fill = year)) +
-  geom_boxplot(outlier.shape = NA) +
-  theme_bw()
+ggplot(news2,aes(x = year, y = numwords, fill = year)) + geom_boxplot(outlier.shape = NA)  + theme_bw()
 ```
 
 While this looks significant at first, we see from the summary down below that there's only variation in the first few years because of their smaller sample size: 
 
 ```{r}
-news %>%
-  group_by(year) %>%
-  summarize(n = n())
+news2 %>% group_by(year) %>% summarize(n = n())
 ```
 
 Not a graph that we plan to keep on the final project as we want to revise it to something that looks cleaner. It is useful for showing the general idea that among every month the means are roughly the same, but some months appear to have more variation within their 75th percentile range.
 
 ### By Month
 ```{r}
-ggplot(news, aes(x = month, y = numwords, fill = month)) +
-  geom_boxplot(outlier.shape = NA) +
-  theme_bw()
+ggplot(news2,aes(x = month, y = numwords, fill = month)) + geom_boxplot(outlier.shape = NA)  + theme_bw()
 ```
 
 ### By Day of Week
 ```{r}
-ggplot(news, aes(x = day_of_week, y = numwords, fill = day_of_week)) +
-  geom_boxplot(outlier.shape = NA) +
-  theme_bw() +
-  ylim(0, 2500)
+ggplot(news2,aes(x = day_of_week, y = numwords, fill = day_of_week)) + geom_boxplot(outlier.shape = NA)  + theme_bw() + ylim(0, 2500)
 ```
 0 = Monday, 1 = Tuesday, etc.
 
 ### By Day of Week Medians
 ```{r}
-news %>%
-  group_by(day_of_week) %>%
-  summarize(average_length = median(numwords))
+news2 %>% group_by(day_of_week) %>% summarize(average_length = median(numwords))
 ```
 Emphasizes the increase in number of words for stories published on weekends.
 
 
 ### Mean Number of Words by Date
 ```{r}
-news$date <- as.Date(news$date, "%Y-%m-%d")
-dailyWordNum <- news %>%
-  filter(!is.na(numwords)) %>%
-  select(date, numwords) %>%
-  group_by(date) %>%
+news2$date <- as.Date(news2$date,"%Y-%m-%d")
+dailyWordNum <- news2 %>% filter(!is.na(numwords)) %>% select(date,numwords) %>% group_by(date) %>%
   summarize(n = n(), meanWordNum = mean(numwords))
-dailyWordNum %>%
-  filter(date >= "2015-01-01") %>%
-  filter(meanWordNum <= 1800) %>%
-  ggplot(aes(x = date, y = meanWordNum)) +
-  geom_point() +
-  xlab("") +
-  stat_smooth(colour = "red")
+dailyWordNum %>% filter(date >= "2015-01-01") %>% filter(meanWordNum <= 1800) %>%
+  ggplot(aes(x=date,y=meanWordNum)) + geom_point() + xlab("") + stat_smooth(colour="red")
 ```
 
 First, we filter out all the na values and then find the mean number of words on any given day.
@@ -202,14 +163,8 @@ Then, we did a scatterplot of all of the dates as the-axis and the mean number o
 ### Attempts to plot lenwords, but we need to fix our method of obtaining lenwords first
 
 ```{r}
-news %>%
-  group_by(date) %>%
-  summarize(n = n(), avgWordLength = mean(avgLenWords)) %>%
-  filter(date >= "2014-01-01") %>%
-  ggplot(aes(x = date, y = avgWordLength)) +
-  geom_point() +
-  theme_bw() +
-  stat_smooth(colour = "red")
+filter(news,(news$numwords >= 3) & (news$numwords <= 4000)) %>% group_by(date) %>% summarize(n = n(), avgLenWords2 = mean(avgLenWords))%>%  filter(date >= "2015-01-01") %>% 
+ggplot(aes(x = date, y = avgLenWords2)) + geom_point()  + theme_bw()
 ```
 
 ### Exploring All The News to see how subjectivity and polarity differ by publication
@@ -242,19 +197,13 @@ We decided to use a box plot as it's an easy way to show not only the average of
 From our boxplot, we see that Talking Points Memo has far and away the highest variance in subjectivity, followed by Breitbart and Business Insider. They all seem to have roughly the same subjectivity scores, with the exception of Reuters' being noticably lower.
 
 ```{r}
-AllTheNews2 %>%
-  group_by(publication) %>%
-  summarize(n = n(), subjectiveAvg = mean(subjectivity), subjectiveVar = var(subjectivity), polarityAvg = mean(polarity), polarityVar = var(polarity))
+AllTheNews2 %>% group_by(publication) %>% summarize(n = n(), subjectiveAvg = mean(subjectivity), subjectiveVar = var(subjectivity), polarityAvg = mean(polarity), polarityVar = var(polarity)) 
 
-ggplot(AllTheNews2, aes(x = publication, y = subjectivity, fill = publication), outline = FALSE) +
-  geom_boxplot(outlier.shape = NA) +
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+ggplot(AllTheNews2,aes(x = publication, y = subjectivity, fill = publication),outline=FALSE) + geom_boxplot(outlier.shape = NA)  + theme(axis.text.x = element_text(angle = 60, hjust = 1))
 ```
 
 ```{r}
-ggplot(AllTheNews2, aes(x = publication, y = polarity, fill = publication), outline = FALSE) +
-  geom_boxplot(outlier.shape = NA) +
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+ggplot(AllTheNews2,aes(x = publication, y = polarity, fill = publication),outline=FALSE) + geom_boxplot(outlier.shape = NA)  + theme(axis.text.x = element_text(angle = 60, hjust = 1))
 ```
 
 
@@ -266,11 +215,9 @@ Then, starting at 2015 (as it's the first year that starts tracking subjectivity
 The reason why we choose a line graph is because it's a smooth way of visualizing how the data changes over time, and it shows a clear trend as the years go on. we also created a linear model that helps back up the graph, but we're unsure about the validity of the linear model because we're not sure if converting the date column into numeric interferes with the results.
 
 ```{r}
-subjectivityDate <- news %>%
-  group_by(date) %>%
-  summarize(n = n(), subjectivityAvg = mean(subjectivity), polarityAvg = mean(polarity))
+subjectivityDate <- news2 %>% group_by(date) %>% summarize(n=n(),subjectivityAvg = mean(subjectivity), polarityAvg = mean(polarity))
 
-plot(subjectivityDate$subjectivityAvg ~ as.Date(subjectivityDate$date, "%d/%m/%Y"), type = "l", xlab = "Dates", ylab = "Average Subjectivity (per day)")
+plot(subjectivityDate$subjectivityAvg~as.Date(subjectivityDate$date,"%d/%m/%Y"),type="l",xlab="Dates",ylab="Average Subjectivity (per day)")
 ```
 
 
@@ -278,14 +225,14 @@ plot(subjectivityDate$subjectivityAvg ~ as.Date(subjectivityDate$date, "%d/%m/%Y
 We then run the same model again, this time looking at how the average polarity changes, and we see that it follows a similar pattern of increasing as time goes on:
 
 ```{r}
-plot(subjectivityDate$polarityAvg ~ as.Date(subjectivityDate$date, "%d/%m/%Y"), type = "l", xlab = "Dates", ylab = "Average Polarity (per day)")
+plot(subjectivityDate$polarityAvg~as.Date(subjectivityDate$date,"%d/%m/%Y"),type="l",xlab="Dates",ylab="Average Polarity (per day)")
 ```
 
 Now, let's look to see what the sentiment scores looked like during, for example, June of 2016 (when Super Tuesday occured):
 
 ```{r}
 subjectivityDateJune <- subjectivityDate %>% filter((subjectivityDate$date >= as.Date("2016-03-01")) & (subjectivityDate$date <= "2016-03-31"))
-plot(subjectivityDateJune$subjectivityAvg ~ as.Date(subjectivityDateJune$date, "%d/%m/%Y"), type = "l", xlab = "Date", ylab = "Subjectivity")
+plot(subjectivityDateJune$subjectivityAvg~as.Date(subjectivityDateJune$date,"%d/%m/%Y"),type="l",xlab="Date",ylab="Subjectivity")
 ```
 
 Here are the aforementioned linear models we also created, which seem to back up our results but we want to go to office hours to ask about them before we use them conclusively, due to converting the dates to numeric values.
@@ -297,7 +244,7 @@ summary(lm(polarityAvg ~ as.numeric(date), data = subjectivityDate))
 
 
 ```{r}
-plot(subjectivityDateJune$polarityAvg ~ as.Date(subjectivityDateJune$date, "%d/%m/%Y"), type = "l")
+plot(subjectivityDateJune$polarityAvg~as.Date(subjectivityDateJune$date,"%d/%m/%Y"),type="l")
 ```
 
 
@@ -308,14 +255,12 @@ Currently it seems like our average length of words is positively correlated wit
 More conclusively, there's over a 99% chance that our number of words is correlated to the polarity of an article. With every word added to the average word length of an article, it's estimated to be more positive with a 2.36*10^-6 chance. While this should be taken with a grain of salt, it's definitely something worth looking into.
 
 ```{r}
-summary(lm(polarity ~ numwords + avgLenWords, data = news))
+summary(lm(polarity ~ numwords + avgLenWords, data=news2))
 
-summary(lm(subjectivity ~ numwords, data = news))
+summary(lm(subjectivity ~ numwords , data = news2))
 ```
 ```{r}
-ggplot(news, aes(x = month, y = polarity, fill = month), outline = FALSE) +
-  geom_boxplot(outlier.shape = NA) +
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+ggplot(news,aes(x = month, y = polarity, fill = month),outline=FALSE) + geom_boxplot(outlier.shape = NA)  + theme(axis.text.x = element_text(angle = 60, hjust = 1))
 ```
 
 ```{r}
