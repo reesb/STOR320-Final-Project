@@ -319,7 +319,7 @@ ggplot(news, aes(x = month, y = polarity, fill = month), outline = FALSE) +
 ```
 
 ```{r}
-AllTheNewsQuant <- select(AllTheNews2, -title, -text, -publication, -author, -date, -url)
+AllTheNewsQuant <- select(AllTheNews2, -title, -text, -publication, -author, -date, -url, -textfixed)
 AllTheNewsPCA <- prcomp(AllTheNewsQuant, scale. = TRUE)
 head(AllTheNewsPCA$rotation[, 5], n = 7)
 ```
