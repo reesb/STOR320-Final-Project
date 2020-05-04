@@ -1,0 +1,535 @@
+---
+title: "Q3"
+author: "Rees Braam"
+date: "4/18/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+set.seed(1337)
+library(tidyverse)
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(qdapDictionaries)
+
+# Read the datasets we specified
+
+# Online News Popularity from https://archive.ics.uci.edu/ml/datasets/Online+News+Popularity
+# OnlineNewsPopularity <- rbind(read_csv("C:/Users/smg635/Downloads/data/OnlineNewsPopularityTraining.csv"), read_csv("C:/Users/smg635/Downloads/data/OnlineNewsPopularityTest.csv"))
+OnlineNewsPopularity <- rbind(read_csv("data/OnlineNewsPopularity/OnlineNewsPopularityTraining.csv"), read_csv("data/OnlineNewsPopularity/OnlineNewsPopularityTest.csv"))
+
+# All the news from https://www.kaggle.com/snapcrack/all-the-news
+# AllTheNews <- read_csv("C:/Users/smg635/Downloads/data/all-the-news.csv")
+AllTheNews <- read_csv("data/all-the-news/all-the-news.csv")
+
+# All the news from https://www.kaggle.com/uciml/news-aggregator-dataset
+# NewsAggregatorDataset <- read_csv("C:/Users/smg635/Downloads/data/news-aggregator-dataset.csv")
+NewsAggregatorDataset <- read_csv("data/news-aggregator-dataset.csv")
+```
+
+```{r}
+
+# AllTheNews <- AllTheNews %>% select(1:month, day, day_of_week, url:polarity) # Switches order of columns
+AllTheNews <- rename(AllTheNews, text = content)
+
+# Remove the 22 NA rows from OnlineNewsPopularity
+OnlineNewsPopularity <- filter(OnlineNewsPopularity, is.na(OnlineNewsPopularity$text) == FALSE)
+
+OnlineNewsPopularity <- rename(OnlineNewsPopularity, subjectivity = global_subjectivity, polarity = global_sentiment_polarity)
+
+# Remove the 6933 rows with date issues from AllTheNews
+AllTheNews <- filter(AllTheNews, AllTheNews$day_of_week != -1)
+
+AllTheNews$date <- as.Date(AllTheNews$date)
+NewsAggregatorDataset$date <- as.Date(NewsAggregatorDataset$date)
+OnlineNewsPopularity$date <- as.Date(OnlineNewsPopularity$date)
+
+NewsAggregatorDataset$day <- as.numeric(format(NewsAggregatorDataset$date, format = "%d"))
+NewsAggregatorDataset$month <- as.numeric(format(NewsAggregatorDataset$date, format = "%m"))
+NewsAggregatorDataset$year <- as.numeric(format(NewsAggregatorDataset$date, format = "%Y"))
+
+OnlineNewsPopularity$day <- as.numeric(format(OnlineNewsPopularity$date, format = "%d"))
+OnlineNewsPopularity$month <- as.numeric(format(OnlineNewsPopularity$date, format = "%m"))
+OnlineNewsPopularity$year <- as.numeric(format(OnlineNewsPopularity$date, format = "%Y"))
+
+OnlineNewsPopularity$day_of_week <- 0 * OnlineNewsPopularity$weekday_is_monday + 1 * OnlineNewsPopularity$weekday_is_tuesday + 2 * OnlineNewsPopularity$weekday_is_wednesday + 3 * OnlineNewsPopularity$weekday_is_thursday + 4 * OnlineNewsPopularity$weekday_is_friday + 5 * OnlineNewsPopularity$weekday_is_saturday + 6 * OnlineNewsPopularity$weekday_is_sunday
+
+NewsAggregatorDataset <- rename(NewsAggregatorDataset, id = ID, title = TITLE, url = URL, publisher = PUBLISHER, category = CATEGORY, story = STORY, hostname = HOSTNAME, timestamp = TIMESTAMP, text = text, subjectivity = subjectivity, polarity = polarity)
+
+OnlineNewsPopularity$publisher <- "Mashable"
+
+# Remove the rows with no text from NewsAggregatorDataset
+NewsAggregatorDataset <- filter(NewsAggregatorDataset, is.na(NewsAggregatorDataset$text) == FALSE)
+
+AllTheNews <- select(AllTheNews, title, date, year, month, day, day_of_week, publication, url, textfixed, subjectivity, polarity)
+AllTheNews <- AllTheNews %>% rename(text = textfixed, publisher = publication)
+OnlineNewsPopularity <- select(OnlineNewsPopularity, title, date, year, month, day, day_of_week, url, publisher, textnolinks, subjectivity, polarity) %>% rename(text = textnolinks)
+NewsAggregatorDataset <- select(NewsAggregatorDataset, title, date, year, month, day, day_of_week, publisher, url, text, subjectivity, polarity)
+
+AllTheNews <- AllTheNews %>% sample_n(20000)
+OnlineNewsPopularity <- OnlineNewsPopularity %>% sample_n(20000)
+NewsAggregatorDataset <- NewsAggregatorDataset %>% sample_n(20000)
+
+# news = rbind(OnlineNewsPopularity, NewsAggregatorDataset)
+news <- rbind(AllTheNews, OnlineNewsPopularity, NewsAggregatorDataset)
+
+news <- mutate(news,
+  numWords = map_int(str_split(text, boundary("word")), length),
+  lenwords = map(str_split(text, boundary("word")), ~ str_count(., "[A-z]")), avgLenWords = map_dbl(lenwords, mean), numUniqueWords = map_int(str_split(text, boundary("word")), n_distinct)
+)
+
+news$month <- as.factor(news$month)
+news$numWords <- as.numeric(news$numWords)
+
+news$day_of_week <- as.factor(news$day_of_week)
+news$year <- as.factor(news$year)
+
+news$date <- as.Date(news$date)
+
+news <- filter(news, (numWords >= 200) & (numWords <= 5000))
+```
+
+
+1)	Finding out if the complexity of a news story (unique words, word length) has anything to do with the orientation (positive/negative) of the article.
+Identifying biased news sources as an extension of this question is also a possibility, using keywords to determine what articles are about and if they are positive or negative. We are going to construct a list of “positive” and “negative” words and then match them to the text of each articles in order to determine the overall sentiment of each article. We also understand that words like “bad” and “negative” have much lighter meaning than words like “disastrous” or “cataclysmic,” so we are also going to utilize categories of words when creating the lists to properly weigh the attitude of published content. The chosen data sets are made up of many news stories, and we feel that we have the required abilities to crawl the links supplied by the dataset in order to obtain text to properly analyze.
+
+```{r}
+# Create the function.
+getmode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+v <- news$numWords
+
+# Calculate the mode using the user function.
+result <- getmode(v)
+print(result)
+
+filter(news, numWords == result)
+```
+
+```{r}
+ggplot(news, aes(polarity, numWords, color = polarity > 0)) +
+  geom_point()
+```
+
+```{r}
+ggplot(news, aes(polarity, avgLenWords, color = polarity > 0)) +
+  geom_point()
+```
+
+```{r}
+ggplot(news, aes(polarity, numUniqueWords, color = polarity > 0)) +
+  geom_point()
+```
+
+```{r, }
+news %>%
+  select(date, year, month, day, day_of_week, publisher, text, subjectivity, polarity) %>%
+  filter(publisher %in% names(sort(table(news$publisher), decreasing = TRUE)[1:5])) %>%
+  group_by(publisher) %>%
+  summarise(mean_polarity = mean(polarity)) %>%
+  ggplot(aes(x = reorder(publisher, mean_polarity), y = mean_polarity, fill = publisher)) +
+  geom_bar(stat = "identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+2)	Does the date or day of the week an article is posted have an effect on its length/complexity?
+We wanted to see if the date/day of the week that an article was posted influenced its complexity; for example, to find if news organizations post stories with lower word counts on weekends or days that they feel that more people will be reading. Our hypothesis for this question is that more digestible news stories (shorter length, fewer unique words) are posted on Friday/the weekend to capture greater interest.
+
+```{r, message=FALSE}
+library(tokenizers)
+library(tidytext)
+library(textdata)
+stories <- select(news, date, year, month, day, day_of_week, publisher, text) %>%
+  group_by(day_of_week) %>%
+  unnest_tokens(word, text)
+
+bing_word_counts <- stories %>%
+  anti_join(tibble(word = Top200Words)) %>%
+  anti_join(stop_words) %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  group_by(day_of_week) %>%
+  filter(sentiment == "positive") %>%
+  top_n(5, word) %>%
+  ungroup() %>%
+  arrange(day_of_week, n) %>%
+  mutate(order = row_number())
+
+bing_word_counts %>%
+  ggplot(aes(order, n, fill = day_of_week)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~day_of_week, scales = "free_y") +
+  labs(
+    y = "Number of Word Occurances",
+    x = NULL
+  ) +
+  scale_x_continuous(
+    breaks = bing_word_counts$order,
+    labels = bing_word_counts$word,
+    expand = c(0, 0)
+  ) +
+  coord_flip() +
+  ggtitle("Bing Sentiment, Most Common Positive Words by Day of Week")
+
+bing_word_counts <- stories %>%
+  anti_join(tibble(word = Top200Words)) %>%
+  anti_join(stop_words) %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  group_by(day_of_week) %>%
+  filter(sentiment == "negative") %>%
+  top_n(5, word) %>%
+  ungroup() %>%
+  arrange(day_of_week, n) %>%
+  mutate(order = row_number())
+
+bing_word_counts %>%
+  ggplot(aes(order, n, fill = day_of_week)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~day_of_week, scales = "free_y") +
+  labs(
+    y = "Number of Word Occurances",
+    x = NULL
+  ) +
+  scale_x_continuous(
+    breaks = bing_word_counts$order,
+    labels = bing_word_counts$word,
+    expand = c(0, 0)
+  ) +
+  coord_flip() +
+  ggtitle("Bing Sentiment, Most Common Negative Words by Day of Week")
+```
+
+
+```{r, message=FALSE}
+stories <- select(news, date, year, month, day, day_of_week, publisher, text) %>%
+  filter(date >= "2014-01-01") %>%
+  group_by(year) %>%
+  unnest_tokens(word, text)
+
+bing_word_counts <- stories %>%
+  anti_join(tibble(word = Top200Words)) %>%
+  anti_join(stop_words) %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  group_by(year) %>%
+  filter(sentiment == "positive") %>%
+  top_n(10, word) %>%
+  ungroup() %>%
+  arrange(year, n) %>%
+  mutate(order = row_number())
+
+bing_word_counts %>%
+  ggplot(aes(order, n, fill = year)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~year, scales = "free_y") +
+  labs(
+    y = "Frequency",
+    x = NULL
+  ) +
+  scale_x_continuous(
+    breaks = bing_word_counts$order,
+    labels = bing_word_counts$word,
+    expand = c(0, 0)
+  ) +
+  coord_flip() +
+  ggtitle("Bing Sentiment, Most Frequent Positive Words by Year")
+
+bing_word_counts <- stories %>%
+  anti_join(tibble(word = Top200Words)) %>%
+  anti_join(stop_words) %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, n)) %>%
+  group_by(year) %>%
+  filter(sentiment == "negative") %>%
+  top_n(10, word) %>%
+  ungroup() %>%
+  arrange(year, n) %>%
+  mutate(order = row_number())
+
+bing_word_counts %>%
+  ggplot(aes(order, n, fill = year)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~year, scales = "free_y") +
+  labs(
+    y = "Frequency",
+    x = NULL
+  ) +
+  scale_x_continuous(
+    breaks = bing_word_counts$order,
+    labels = bing_word_counts$word,
+    expand = c(0, 0)
+  ) +
+  coord_flip() +
+  ggtitle("Bing Sentiment, Most Frequent Negative Words by Year")
+```
+
+```{r, message=FALSE}
+stories <- select(news, date, year, month, day, day_of_week, publisher, text) %>%
+  group_by(day_of_week) %>%
+  unnest_tokens(word, text)
+
+afinn_word_counts <- stories %>%
+  anti_join(tibble(word = Top200Words)) %>%
+  anti_join(stop_words) %>%
+  inner_join(get_sentiments("afinn")) %>%
+  count(word, value, sort = TRUE) %>%
+  ungroup() %>%
+  mutate(contribution = n * value) %>%
+  mutate(word = reorder(word, contribution)) %>%
+  group_by(day_of_week) %>%
+  top_n(10, abs(contribution)) %>%
+  ungroup() %>%
+  arrange(day_of_week, contribution) %>%
+  mutate(order = row_number())
+
+afinn_word_counts %>% ggplot(aes(order, contribution, fill = n * value > 0)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  facet_wrap(~day_of_week, scales = "free") +
+  xlab(NULL) +
+  ylab("AFINN sentiment score * # of occurrences (Contribution)") +
+  theme_bw() +
+  scale_x_continuous(
+    breaks = afinn_word_counts$order,
+    labels = afinn_word_counts$word,
+    expand = c(0, 0)
+  ) +
+  coord_flip() +
+  ggtitle("Highest contribution words by day of week")
+```
+
+```{r, message=FALSE}
+stories <- select(news, date, year, month, day, day_of_week, publisher, text) %>%
+  filter(date >= "2014-01-01") %>%
+  group_by(year) %>%
+  unnest_tokens(word, text)
+
+afinn_word_counts <- stories %>%
+  anti_join(tibble(word = Top200Words)) %>%
+  anti_join(stop_words) %>%
+  inner_join(get_sentiments("afinn")) %>%
+  count(word, value, sort = TRUE) %>%
+  ungroup() %>%
+  mutate(contribution = n * value) %>%
+  mutate(word = reorder(word, contribution)) %>%
+  group_by(year) %>%
+  top_n(10, abs(contribution)) %>%
+  ungroup() %>%
+  arrange(year, contribution) %>%
+  mutate(order = row_number())
+
+afinn_word_counts %>% ggplot(aes(order, contribution, fill = n * value > 0)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +
+  facet_wrap(~year, scales = "free") +
+  xlab(NULL) +
+  ylab("AFINN sentiment score * # of occurrences (Contribution)") +
+  theme_bw() +
+  scale_x_continuous(
+    breaks = afinn_word_counts$order,
+    labels = afinn_word_counts$word,
+    expand = c(0, 0)
+  ) +
+  coord_flip() +
+  ggtitle("Highest contribution words by year")
+```
+
+
+
+3)	Compare number of “positive” and “negative” articles posted by month, by organization to determine if overall news organization sentiment went up or down over the sampled period.
+By checking which organizations became more, or potentially less negative over time, we hope to determine which news organizations function for criticism and which, if any, exist in more of a state of celebration.
+
+```{r}
+top_pubs1 <- names(sort(table(news$publisher), decreasing = TRUE)[1:6])
+top_pubs2 <- names(sort(table(news$publisher), decreasing = TRUE)[7:12])
+```
+
+```{r, message=FALSE}
+stories <- select(news, date, year, month, day, day_of_week, publisher, text) %>%
+  filter(publisher %in% top_pubs1) %>%
+  group_by(publisher) %>%
+  unnest_tokens(word, text)
+
+bing_word_counts <- stories %>%
+  anti_join(tibble(word = Top200Words)) %>%
+  anti_join(stop_words) %>%
+  #inner_join(get_sentiments("bing")) %>%
+  #count(word, sentiment, sort = TRUE) %>%
+  count(word, sort=TRUE) %>%
+  ungroup() %>%
+  arrange(publisher, n) %>%
+  mutate(order = row_number())
+
+bing_word_counts %>%
+  group_by(publisher) %>%
+  top_n(5) %>%
+  ungroup() %>%
+  ggplot(aes(order, n, fill = publisher)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~publisher, scales = "free_y") +
+  labs(
+    y = "Word frequency",
+    x = NULL
+  ) +
+  scale_x_continuous(
+    breaks = bing_word_counts$order,
+    labels = bing_word_counts$word,
+    expand = c(0, 0)
+  ) +
+  coord_flip() +
+  ggtitle("Most frequent words by publisher for top five publishers")
+```
+
+```{r, message=FALSE}
+stories <- select(news, date, year, month, day, day_of_week, publisher, text) %>%
+  filter(publisher %in% top_pubs2) %>%
+  group_by(publisher) %>%
+  unnest_tokens(word, text)
+
+bing_word_counts <- stories %>%
+  anti_join(tibble(word = Top200Words)) %>%
+  anti_join(stop_words) %>%
+  #inner_join(get_sentiments("bing")) %>%
+  #count(word, sentiment, sort = TRUE) %>%
+  count(word, sort=TRUE) %>%
+  ungroup() %>%
+  arrange(publisher, n) %>%
+  mutate(order = row_number())
+
+bing_word_counts %>%
+  group_by(publisher) %>%
+  top_n(5) %>%
+  ungroup() %>%
+  ggplot(aes(order, n, fill = publisher)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~publisher, scales = "free_y") +
+  labs(
+    y = "Word frequency",
+    x = NULL
+  ) +
+  scale_x_continuous(
+    breaks = bing_word_counts$order,
+    labels = bing_word_counts$word,
+    expand = c(0, 0)
+  ) +
+  coord_flip() +
+  ggtitle("Most frequent words by publisher for top five publishers")
+```
+
+### Wordcloud All Words
+```{r, message=FALSE}
+library(wordcloud2)
+
+stories <- select(news, date, year, month, day, day_of_week, publisher, text) %>%
+  filter(date >= "2014-01-01") %>%
+  filter(publisher %in% top_pubs1) %>%
+  group_by(publisher) %>%
+  unnest_tokens(word, text)
+
+d <- tibble(word = stories$word) %>%
+  anti_join(tibble(word = Top200Words)) %>%
+  anti_join(stop_words) %>%
+  count(word, sort = TRUE) %>%
+  filter(n > 100) %>%
+  rename(freq = n)
+
+
+wordcloud2(data = d, color = "random-light", backgroundColor = "black", size = .25)
+```
+
+### Wordcloud Positive Words
+```{r, message=FALSE}
+library(wordcloud2)
+
+stories <- select(news, date, year, month, day, day_of_week, publisher, text) %>%
+  filter(date >= "2014-01-01") %>%
+  filter(publisher %in% top_pubs1) %>%
+  group_by(publisher) %>%
+  unnest_tokens(word, text)
+
+d <- tibble(word = stories$word) %>%
+  anti_join(tibble(word = Top200Words)) %>%
+  anti_join(stop_words) %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  filter(sentiment == "positive") %>%
+  select(-sentiment) %>%
+  #  count(word) %>%
+  rename(freq = n)
+
+
+wordcloud2(data = d, color = "random-light", backgroundColor = "black")
+```
+
+### Wordcloud Negative Words
+```{r, message=FALSE}
+stories <- select(news, date, year, month, day, day_of_week, publisher, text) %>%
+  filter(date >= "2014-01-01") %>%
+  filter(publisher %in% top_pubs1) %>%
+  group_by(publisher) %>%
+  unnest_tokens(word, text)
+
+d <- tibble(word = stories$word) %>%
+  anti_join(tibble(word = Top200Words)) %>%
+  anti_join(stop_words) %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE) %>%
+  filter(sentiment == "negative") %>%
+  select(-sentiment) %>%
+  #  count(word) %>%
+  rename(freq = n)
+
+
+wordcloud2(data = d, color = "random-light", backgroundColor = "black", size = .5)
+```
+
+### Positive Articles by Month 
+```{r}
+pub_mean_pol = news %>%
+  select(date, year, month, day, day_of_week, publisher, text, subjectivity, polarity) %>%
+  filter(publisher %in% top_pubs1) %>%
+  group_by(publisher, month) %>%
+  summarise(mean_polarity = mean(polarity)) 
+
+pub_mean_pol %>% ggplot(aes(x = month, y = mean_polarity, fill = publisher)) +
+  facet_wrap(~publisher, scales = "free_y") +
+  labs(
+    y = "Mean polarity",
+    x = "Month"
+  ) +
+  ggtitle("Mean polarity by publisher by month for top publishers") +
+  geom_col(show.legend = FALSE)
+```
+
+```{r}
+pub_mean_pol = news %>%
+  select(date, year, month, day, day_of_week, publisher, text, subjectivity, polarity) %>%
+  filter(publisher %in% top_pubs2) %>%
+  group_by(publisher, month) %>%
+  summarise(mean_polarity = mean(polarity)) 
+
+pub_mean_pol %>% ggplot(aes(x = month, y = mean_polarity, fill = publisher)) +
+  facet_wrap(~publisher, scales = "free_y") +
+  labs(
+    y = "Mean polarity",
+    x = "Month"
+  ) +
+  ggtitle("Mean polarity by publisher by month for top publishers") +
+  geom_col(show.legend = FALSE)
+```

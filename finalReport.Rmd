@@ -1,0 +1,490 @@
+---
+title: "Final Report"
+author: "Robert Hall, Rees Braam, Sidharth Kulgod, Sam Galloway"
+date: "4/24/2020"
+output: html_document
+---
+
+```{r setup, message = FALSE,include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, error = FALSE, warning = FALSE, tidy = TRUE)
+```
+
+```{r, results='hide'}
+set.seed(1337)
+library(MASS)
+library(car)
+library(glmnet)
+library(rsample)
+library(performance)
+library(qdapDictionaries)
+library(tokenizers)
+library(tidytext)
+library(textdata)
+library(wordcloud2)
+
+library(ggplot2)
+library(readr)
+library(tidyverse)
+library(dplyr)
+
+memory.limit(9999999999)
+```
+
+```{r, results='hide'}
+
+# Read the datasets we specified
+
+# Online News Popularity from https://archive.ics.uci.edu/ml/datasets/Online+News+Popularity
+OnlineNewsPopularity <- rbind(read_csv("data/OnlineNewsPopularity/OnlineNewsPopularityTraining.csv"), read_csv("data/OnlineNewsPopularity/OnlineNewsPopularityTest.csv"))
+
+# All the news from https://www.kaggle.com/snapcrack/all-the-news
+AllTheNews <- read_csv("data/all-the-news/all-the-news.csv")
+
+# All the news from https://www.kaggle.com/uciml/news-aggregator-dataset
+NewsAggregatorDataset <- read_csv("data/news-aggregator-dataset.csv")
+
+
+AllTheNews <- rename(AllTheNews, text = content)
+
+# Remove the 22 NA rows from OnlineNewsPopularity
+OnlineNewsPopularity <- filter(OnlineNewsPopularity, is.na(OnlineNewsPopularity$text) == FALSE)
+
+OnlineNewsPopularity <- rename(OnlineNewsPopularity, subjectivity = global_subjectivity, polarity = global_sentiment_polarity)
+
+# Remove the 6933 rows with date issues from AllTheNews
+AllTheNews <- filter(AllTheNews, AllTheNews$day_of_week != -1)
+
+AllTheNews$date <- as.Date(AllTheNews$date)
+NewsAggregatorDataset$date <- as.Date(NewsAggregatorDataset$date)
+OnlineNewsPopularity$date <- as.Date(OnlineNewsPopularity$date)
+
+NewsAggregatorDataset$day <- as.numeric(format(NewsAggregatorDataset$date, format = "%d"))
+NewsAggregatorDataset$month <- as.numeric(format(NewsAggregatorDataset$date, format = "%m"))
+NewsAggregatorDataset$year <- as.numeric(format(NewsAggregatorDataset$date, format = "%Y"))
+
+OnlineNewsPopularity$day <- as.numeric(format(OnlineNewsPopularity$date, format = "%d"))
+OnlineNewsPopularity$month <- as.numeric(format(OnlineNewsPopularity$date, format = "%m"))
+OnlineNewsPopularity$year <- as.numeric(format(OnlineNewsPopularity$date, format = "%Y"))
+
+OnlineNewsPopularity$day_of_week <- 0 * OnlineNewsPopularity$weekday_is_monday + 1 * OnlineNewsPopularity$weekday_is_tuesday + 2 * OnlineNewsPopularity$weekday_is_wednesday + 3 * OnlineNewsPopularity$weekday_is_thursday + 4 * OnlineNewsPopularity$weekday_is_friday + 5 * OnlineNewsPopularity$weekday_is_saturday + 6 * OnlineNewsPopularity$weekday_is_sunday
+
+NewsAggregatorDataset <- rename(NewsAggregatorDataset, id = ID, title = TITLE, url = URL, publisher = PUBLISHER, category = CATEGORY, story = STORY, hostname = HOSTNAME, timestamp = TIMESTAMP)
+
+OnlineNewsPopularity$publisher <- "Mashable"
+
+# Remove the rows with no text from NewsAggregatorDataset
+NewsAggregatorDataset <- filter(NewsAggregatorDataset, is.na(NewsAggregatorDataset$text) == FALSE)
+```
+
+```{r}
+AllTheNews <- dplyr::select(AllTheNews, title, date, year, month, day, day_of_week, publication, url, textfixed, subjectivity, polarity)
+AllTheNews <- AllTheNews %>% rename(text = textfixed, publisher = publication)
+OnlineNewsPopularity <- dplyr::select(OnlineNewsPopularity, title, date, year, month, day, day_of_week, url, publisher, textnolinks, subjectivity, polarity) %>% rename(text = textnolinks)
+NewsAggregatorDataset <- dplyr::select(NewsAggregatorDataset, title, date, year, month, day, day_of_week, publisher, url, text, subjectivity, polarity)
+```
+
+```{r}
+# subset_size <- 39622
+
+# AllTheNews <- AllTheNews %>% sample_n(subset_size)
+# OnlineNewsPopularity <- OnlineNewsPopularity %>% sample_n(subset_size)
+# NewsAggregatorDataset <- NewsAggregatorDataset %>% sample_n(subset_size)
+
+news <- rbind(AllTheNews, OnlineNewsPopularity, NewsAggregatorDataset)
+```
+
+```{r}
+news <- mutate(news,
+  words = str_split(text, boundary("word")),
+  numWords = map_int(words, length),
+  lenwords = map(words, ~ str_count(., "[A-z]")),
+  uniqueWords = map_int(words, n_distinct),
+  avgLenWords = map_dbl(lenwords, mean)
+)
+
+news$month <- as.factor(news$month)
+news$numWords <- as.numeric(news$numWords)
+
+news$day_of_week <- as.factor(news$day_of_week)
+news$year <- as.factor(news$year)
+
+news$date <- as.Date(news$date)
+
+news <- filter(news, (news$numWords >= 200) & (news$numWords <= 5000))
+news <- filter(news, date >= "2014-01-01")
+```
+
+```{r}
+top_pubs1 <- names(sort(table(news$publisher), decreasing = TRUE)[1:9])
+top_pubs2 <- names(sort(table(news$publisher), decreasing = TRUE)[10:18])
+```
+
+# Introduction
+
+Newspapers have existed in the United States for over 300 years, and with much of it entering an online platform, we are now able to manipulate, synthesize, and interpret massive amounts of textual data. This is important because it allows us to extract sophisticated trends which can help drive decision making. There are countless news sources around the world, and anybody that could successfully analyze all of these news sources simultaneously would have access to an immense amount of information  and would gain tremendous insight into current events. There are many uses for this information, such as predicting the market or fashion trends. 
+
+With this in mind, our group decided to try our hand at investigating trends in online news articles. But as discussed in class, real world data is never clean, and it does not ever come on a silver platter without it being handed to you. In looking for data to explore, we found three different datasets, all with similar information about online news articles but in different formats. Our initial goal was to use the different data in these three datasets to answer different questions, but we soon realized that we could add to these datasets and combine them with some web scraping. With this, our goal transformed to scraping the data from the news sites, cleaning it, and combining the datasets. From here, we could use our now larger dataset to answer our initial goals with a broader range of articles and additional information (such as sentiment scores and dates).
+
+**Results at a Glance**
+
+* We found that any correlation that might exist between complexity and an article’s orientation wasn’t significant enough for complexity to be used as an effective predictor.
+* Publishers did not release more “digestible” news articles on the weekends, and instead chose the start of the week to maximize exposure.
+* News organizations consistently write positive-neutral articles, where more serious articles average closer and closer to true neutral polarity. None of the top news organizations show clear trends throughout the year.
+* We wanted to determine which news organizations published the most positive and negative stories. As the data that we had available grew in quality and in quantity, we also determined which organizations were the most “subjective” based on the words they used in their articles. We expected positive and negative clusters to appear in the data, but no such thing materialized even after conducting K-means testing and looking at raw scatterplots. What we did find, however, was a moderate relationship between how subjective a given organization’s median content was and how positive their median content turned out to be.
+
+
+# Data Description and Exploration
+
+## Original Datasets
+
+As mentioned in the introduction, we had three initial datasets that we combined into one final dataset that we used to conduct our final analysis. The transformation from these three original sets to the final set is where the majority of the time and work for this project went. To begin, we’ll describe the three original sets, in order of our decision to use them.
+
+### "[Online News Popularity](https://archive.ics.uci.edu/ml/datasets/Online+News+Popularity)" (UCI)
+
+Created originally as a self-contained repository of data intended for NLP machine learning, the Online News Popularity (ONP) dataset came with 61 attributes describing the article, including features such as the category, keywords, the day of the week it was posted, LDA information, and statistics describing the sentiment and polarity of the articles. It is important to note that this dataset looked only at news articles from the news site Mashable, which reports mostly on popular culture and social trends for its news. This data was scraped by UCI in January of 2015. This dataset included links to the articles it contained information about, but did not include their text. This dataset also came in two files, one for training and one for testing.
+
+```{r}
+head(OnlineNewsPopularity)
+```
+
+### "[All The News](https://www.kaggle.com/snapcrack/all-the-news)" (Kaggle)
+
+Compiled by a Kaggle user named Andrew Thompson, the All the News (ATN) dataset contained articles from 2016 and 2017, with a smaller portion also coming from 2015. While this dataset did not include the URLs for the articles, each row did contain the raw text, title and time data available for them. While we were not able to scrape data from the articles themselves for this dataset, we did not need to, as it already contained all the raw data that we needed to make sentiment scores and work with the content of the articles. We originally intended to use this dataset for the questions that only required the text and to test any predictions that we made about the content of certain news organizations.
+
+```{r}
+head(OnlineNewsPopularity)
+```
+
+### "[News Aggregator Dataset](https://www.kaggle.com/uciml/news-aggregator-dataset)" (UCI)
+
+While downloaded from Kaggle, the News Aggregator Dataset (NAD) is another dataset collected by the UCI Machine Learning Repository and contains a much wider range of news organizations not including Mashable. Unlike the other UCI dataset, however, which contained 61 features, this dataset contained seven features. We initially did not think that this dataset would be usable, but because it does contain the URLs of the news articles, we realized that we could scrape all the data we needed about the articles ourselves. The articles in this dataset come from between the months of March and August of 2014, and were intended to be used to train machine learning algorithms to predict article category from title.
+
+```{r}
+head(NewsAggregatorDataset)
+```
+
+## Dataset Exploration and Web Scraping
+
+### Adding text
+
+In order to answer the questions we had laid out at the beginning of the project, we needed to have text to analyze for complexity and sentiment scores, but only one of our datasets came with the actual article text, so the first thing we set out to do was add this article text to the datasets that lacked it: ONP and NAD. Our method of doing this was to write python scripts ([link](https://github.com/reesb/STOR320-Final-Project)) that added the text as a column using pandas. Our first attempt at doing this was to write the code ourselves, which ended up being time-consuming, inefficient, and ultimately yielded results that were not as strong. On our second approach, we wrote a new script using a text scraping package named Newspaper3k ran faster and returned cleaner results. However, “faster” still took about 10 days to run on NAD’s ~400k rows. We used a similar script to add the text to ONP as well. 
+
+Once we had the text columns added to all the datasets, we did some exploration of the text in R and plotted some simple statistics like average number of words and average word length, but found stair-stepping patterns and unusual differences in many of our plots that seemed unnatural. An investigation into the parsed text column revealed that the text we had parsed was full of unicode errors, which we had to then fix with another python script to get the actual text. This script was much simpler and ran much quicker, and so did not cause any sort of delay once we ran it. We did, however, learn much more about unicode and python encoding than we intended to.
+
+### Adding subjectivity/polarity
+
+Once we had the text parsed and added to the datasets, we needed to add subjectivity and polarity columns so that we could answer our questions focused on sentiment analysis. For this, we used another python package, [TextBlob](https://textblob.readthedocs.io). Sentiment analysis runs much faster than web scraping since it never has to wait on anything to download, unlike web scraping which does. We used TextBlob in python scripts to add subjectivity and polarity columns to ATN and NAD. ONP already had columns with this information.
+
+### Creating the final dataframe
+
+Even once we had scraped all the data we wanted to and added it to the original datasets via python, each dataset still required some transformation before being combined into one dataframe, and even once it was combined, still required some final manipulation to get it to where we needed it in order to get anything out of it. To summarize, we conducted the following transformations on the specified datasets to prepare them:
+
+**ONP**:
+
+* Filter out rows for which text did not parse properly in python
+* Rename global_subjectivity and global_sentiment_polarity columns
+* Convert date column to an R date object
+* Format day, month, and year columns to R day, month, and year objects
+* Combine features representing the day on which the article was posted into one feature
+* Create publisher column (all Mashable)
+* Remove feature columns that we did not need
+
+**ATN**:
+
+* Rename content, text, and publication columns
+* Filter rows for which the date did not parse properly in python
+* Convert date column to an R date object
+* Remove feature columns that we did not need
+
+**NAD**:
+
+* Convert date column to an R date object
+* Format day, month, and year columns to R day, month, and year objects
+* Rename ID, TITLE, URL, PUBLISHER, CATEGORY, STORY, HOSTNAME, and TIMESTAMP columns
+* Filter rows for which the text did not parse properly in python (caused by 404 error)
+
+Only after all of the above mentioned steps and scripts were complete did we finally get to the point where we could rbind the sets together and have a complete dataset without large chunks of NA values for many rows.
+
+Once we had the original datasets combined with all the additional columns we needed, we then ran a function to add statistics about each article as columns. The statistics were the number of words, the average length of the words, and the number of unique words. Finally, we filtered the dataset so that we were only left with articles that had more than 200 words and less than 5000 words. We found that articles that were shorter than 200 words tended to be improperly parsed (i.e the script parsed an ad on the page instead of the article).
+
+### Final Dataframe
+
+The final dataframe that we came up with contains the following columns:
+
+* **title** - *string*, title of the article
+* **date** - *date*, article date
+* **year** -  *factor*, the year the article was published
+* **month** - *factor*, the month the article was published
+* **day** - *factor*, the day of the month the article was published
+* **day_of_week** - *factor*, the day of the week the article was published, where 0 represents Monday, 1 is Tuesday, and so on until we get 6 as Sunday
+* **url** - *string*, the url where the article is located
+* **text** - *string*, the text located inside of an article
+* **subjectivity** - *double*, a continuous measure from [-1,1] where -1 is completely negative and 1 is completely positive
+* **polarity** - *double*, a continuous measure from [0,1] where 0 is completely objective and 1 is completely subjective.
+* **words** - *vector*, list of strings, contains all of the separate words from an article
+* **numWords** - *double*, the count of words in the article
+* **lenWords** - *list*, list of integers representing the length of each word in the article, in order
+* **uniqueWords** - *integer*, the number of unique words in the article
+* **avgLenWords** - *double*, the average length of the words in the article
+
+We've plotted some explanatory statistics below to help visualize the data:
+
+```{r}
+news %>%
+  group_by(year) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(year, count, fill = year)) +
+  geom_bar(stat = "identity") +
+  ggtitle("Year vs Count")
+```
+
+```{r}
+news %>%
+  group_by(month) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(month, count, fill = month)) +
+  geom_bar(stat = "identity") +
+  ggtitle("Month vs Count")
+```
+
+```{r}
+news %>%
+  group_by(day) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(day, count, fill = day)) +
+  geom_bar(stat = "identity") +
+  ggtitle("Day vs Count")
+```
+
+```{r}
+news %>%
+  group_by(day_of_week) %>%
+  summarise(count = n()) %>%
+  ggplot(aes(day_of_week, count, fill = day_of_week)) +
+  geom_bar(stat = "identity") +
+  ggtitle("Day of Week vs Count")
+```
+
+# Results
+
+Now that we have identified and filled in the missing information in our dataframe, filtered out the useless rows, and combined our three separate datasets into one, we can use this dataset to answer our questions like with any normal, clean dataset.
+
+## Question One
+#### *Does the complexity of a news story (number of words, unique words, word length) have anything to do with the orientation (positive/negative) of the article?*
+
+What we were really looking for here was some sort of correlation between the property of the words in the article or the article itself and its overall sentiment and the polarity of this sentiment. To answer this, we looked at the correlation both of these variables had with three columns we had created and added to the dataset with R functions: numWords, avgLenWords, and numUniqueWords.
+ 
+We looked into multiple types of ways to look for correlation in our variables, but eventually decided that the best fitting model would be the Gaussian distribution, as both of our criterion variables are continuous and can contain non-positive values. However, before looking at the results of said model, we decided to run some basic tests to check if our models had any glaring issues that we should fix beforehand. One of these tests was checking for collinearity, and in the process of doing this for each of our models, we found that our numWords and uniqueWords variables have a lot of collinearity between them.
+
+This made logical sense after we thought about it, because an article with more words will most likely have more unique words than a shorter article would. As both of our variable’s VIF scores were so similar, that didn’t particularly factor into our choice of which variable to remove, so we opted to take out our uniqueWords variable from our linear model as we felt like, if either variable had mistakes in how we derived them caused by improper text-crawling we didn’t catch, uniqueWords would be more heavily affected by this. After fixing this, we then had two models that used our numWords and avgLenWords variables to try and predict the polarity and subjectivity of our data. After fixing our model's collinearity, we then decided to look at some added variable plots for our linear models to see what information they might contain:
+
+```{r}
+polarityLM <- lm(polarity ~ numWords + avgLenWords, data = news)
+subjectivityLM <- lm(subjectivity ~ numWords + avgLenWords, data = news)
+
+avPlots(polarityLM)
+avPlots(subjectivityLM)
+```
+
+This shows us the distribution for polarity and subjectivity on our numWords and avgLenWords variables separately, after controlling for the presence of the predictor variable that we aren’t looking at (which would be avgLenWords and numWords, respectively). There seems to be no strong correlation from this: even when comparing articles that have the same number of words (or same average length of its words), there are large amounts of variation for the polarity. From this, we can see that our avgLenWords seems to have almost no noticeable correlation with our criterion variable on either of these graphs. While numWords seems to have slightly more noticable correlation that we can see, it still has a multitude of issues. The most egregious example of this is how, while there are a multitude of data points that have about 500 less words than the mean, their residuals of polarity scores range from -0.6 to 0.75, and the subjectivity residuals fare even worse, ranging from -0.4 to about 0.58. 
+
+As such, we assumed that in our linear model, our predictors didn't have very much correlation with our criterion variables, but we decided to look at our summary to reaffirm this:
+
+```{r}
+summary(polarityLM)
+summary(subjectivityLM)
+```
+
+We immediately noticed that both of our R^2 values for these models were incredibly low, with them both being below 0.05. However, what caught our eye after that is that both of our predictor variables for our models appear to be very statistically significant. What we can gather for this is that, while there does indeed appear to be correlation between the number of words and average length of these words and the overall subjectivity and polarity of an article, it accounts for an incredibly small amount of the variation and using it as a predictor would be very ill-advised.
+
+## Question Two
+
+#### *Does the date or day of the week an article is posted have an effect on its length/complexity?*
+
+We approached question two with it with two potential methods. First, we created a simple linear model to determine if there was a relationship between the day of the week an article was published and its length. Q2_mod provided evidence that the relationship between article length and Monday, Tuesday, Wednesday, Thursday, and Sunday were unlikely due to chance and that there is not a relationship between an article published on Friday or Saturday and its length. The combinations of low r-squared value for certain variables and low P-Values in Q2_mod can indicate that a graph of the data could show noisy, high-variability data, which may result in trends among certain variables. Nevertheless, the extremely low r-squared value tells us that the model is likely not reliable.
+
+```{r}
+Q2_mod <- lm(numWords ~ day_of_week, data = news)
+
+summary(Q2_mod)
+```
+
+Our second approach was to create summary tables and graphs which would allow us to identify trends among the data. We utilized grouping and summarizing to create our summary tables and ggplot to create graphs. In regards to ggplot for this part, we utilized two graphs from the data exploration, count by day of the week and count by day of the month. The most "digestible" news stories, or articles with the lowest average word count by day of the week, tended to be published on Tuesday and Wednesdays, while the weekends consisted of less articles with higher word counts. It appears that many publishers waited to publish news articles until the start of the new week to maximize exposure because people may be less inclined to stay up to date on the news on the weekends, instead choosing to relax and disconnect from their phones and laptops. 
+
+```{r}
+news %>%
+  group_by(day_of_week) %>%
+  summarize(n = n(), numWordsAvg = mean(numWords))
+
+news %>%
+  group_by(day_of_week) %>%
+  summarize(n = n(), numWordsAvg = mean(numWords)) %>%
+  ggplot(aes(day_of_week, numWordsAvg, fill = day_of_week)) +
+  geom_bar(stat = "identity") +
+  ggtitle("Day of Week vs numWordsAvg")
+```
+
+In order to gain some insight into what may have caused the length of articles to vary based on what day of the week they were published, we looked into what made each article unique. To do this, we implemented a tf-idf statistic which quantifies how important a word is to a document in a collection of documents, for example, our news2 dataset. The results displayed a number of website titles and potential character names, a common result with the implementation of tf-idf in a collection of books. Originally, the output was not as clear as we hoped because our tf-idf statistic was including a number of advertisements. But after some additional cleaning code, it became much more clear. It was interesting to examine that a series of names and objects were determined to make each article unique. For example, the phrase “peaches” was most important to articles published Tuesdays and “Ari Fleischer”, a former White House press secretary, was most important to articles published on Thursdays. A potential shortcoming of our application of the tf-idf statistic is that the articles in the binded data sets were not related in any way, as opposed to a collection of books which all refer to the same characters and locations. Our dataset was a collection of different news articles from different publishers which covered numerous different topics.
+
+```{r}
+news_words <- news %>%
+  sample_n(nrow(news) * .1) %>%
+  unnest_tokens(word, text) %>%
+  count(day_of_week, word, sort = TRUE) %>%
+  bind_tf_idf(word, day_of_week, n) %>%
+  anti_join(tibble(word = Top200Words)) %>%
+  anti_join(stop_words)
+
+plot_newspaper <- news_words %>%
+  bind_tf_idf(word, day_of_week, n) %>%
+  mutate(word = fct_reorder(word, tf_idf)) %>%
+  mutate(day_of_week = factor(day_of_week, levels = c(
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6"
+  )))
+
+plot_newspaper %>%
+  group_by(day_of_week) %>%
+  top_n(5, tf_idf) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, tf_idf)) %>%
+  ggplot(aes(word, tf_idf, fill = day_of_week)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~day_of_week, ncol = 2, scales = "free") +
+  coord_flip() +
+  ggtitle("Tf-idf by day of week")
+```
+
+## Question Three
+
+#### *Did overall news organization sentiment go up or down over the sampled period?*
+
+The initial question here is purely observational, as we are looking for patterns in the data we have. Unfortunately, there are a lot of publishers in our dataset, more than a few thousand. Because of this, it is not effective for us to look at all news organizations over the course of our time period. Rather, it is better for us to look at a subset so that we can focus on depth and not breadth. 
+
+With that out of the way, this question can be answered with a plot of average sentiment scores for each month for each selected publisher. We created this plot by filtering our dataframe for the selected publishers, grouping by publisher and month, and then finding the mean polarity for each resultant row, outputting the below dataframe:
+
+```{r}
+pub_mean_pol <- news %>%
+  select(date, year, month, day, day_of_week, publisher, text, subjectivity, polarity) %>%
+  filter(publisher %in% top_pubs1) %>%
+  group_by(publisher, month) %>%
+  summarise(mean_polarity = mean(polarity))
+
+pub_mean_pol
+```
+
+We then used ggplot to visualize this data: 
+
+```{r}
+pub_mean_pol %>% ggplot(aes(x = month, y = mean_polarity, fill = publisher)) +
+  facet_wrap(~publisher, scales = "free_y") +
+  labs(
+    y = "Mean polarity",
+    x = "Month"
+  ) +
+  ggtitle("Mean polarity by publisher by month for top publishers") +
+  geom_col(show.legend = FALSE)
+```
+
+There are two key things to notice in the plots: the scale for the y-axis on each plot, and the variance. For one, we can notice that none of these top publishers had a single month with an average negative polarity, which gives us some insight into what kind of articles a successful news organization should be writing. We can also notice that some of these publishers have significantly different mean polarity. For example, Mashable was roughly twice as positive as Retuers and Breitbart on average. Moving on to the variance, we can also see that some of these publishers show a significant amount of variance throughout the year while others remain stable. For example, Breitbart shows an almost bimodal distribution over the months, while Mashable seems to hover around .11 for most months. 
+
+All in all, to answer the initial question: It seems like there is variety in the level and pattern of polarity that news organizations show over the months, but not in the type; the largest news organizations avoid phrasing things negatively, but do not use an excessively positive tone. However, we can see that the type of news does play a role in the sentiment of the articles an organization publishes. Mashable, a news organization focusing on popular culture, had a higher positive sentiment polarity on average throughout the year compared to the other top news organizations. The other organizations that focused on ‘real’ news averaged lower polarity averages, down by almost 50% in some cases!
+
+As much as people like to flame the media for seeming biased, the most popular organizations seem to consistently hover just above the truly neutral 0 polarity.
+
+## Question Four
+
+#### *What is the optimal balance of multimedia to text to ensure maximum popularity (measured in number of shares or association)?*
+
+While this was initially one of the questions we planned on researching, as we began to do some exploratory data analysis we realized that this question was not in scope. Obtaining images was possible through the Newspaper3k package, but would have taken significantly longer to download. Further, there was no function to obtain the number of shares each article had, and we are not experienced enough with web crawling to do this. While this would be an interesting question to answer, it unfortunately turned out to not be possible given the class scope, our time restrictions, and our skill sets.
+
+## Question Five
+
+#### *Which news organizations publish the most “positive” stories and which ones publish the most negative ones*
+
+The first step was to create a summary table by publisher that looked at key statistics, such as mean polarity/subjectivity for a given publisher. One problem with such a large dataset was the enormous number of publishers that had low sample sizes compared to the better represented publishers in the group. We elected to look only at the publishers that had over 1,000 samples in the data in this analysis, for news outlets that had fewer stories could have overall publisher statistics that would look extreme compared to ones that had larger sample sizes. Our next step to answer the question that we posed would be to present which publishers out of this subset publish the most positive/negative stories, but after collecting all this data we can also answer which publishers put out the most subjective content versus objective.
+
+```{r}
+toppubs <- names(sort(table(news$publisher), decreasing = TRUE)[1:25])
+
+news25 <- news %>% filter(publisher %in% toppubs)
+
+news25 %>%
+  group_by(publisher) %>%
+  summarize(number = n(), mediansubjectivity = median(subjectivity), medianpolarity = median(polarity), meansubjectivity = mean(subjectivity), meanpolarity = mean(polarity))
+```
+
+We elected to use box and whisker plots to present this data because we would be able to see which news websites had many outliers, where the 2nd and 3rd quartiles fell, and the median (unaffected by outliers) article at a glance.
+
+```{r}
+ggplot(news25, aes(x = fct_reorder(publisher, polarity, .desc = TRUE), y = polarity, fill = publisher), outline = FALSE) +
+  geom_boxplot(outlier.shape = NA) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  ylim(-0.5, 0.75) +
+  theme(legend.position = "none") +
+  labs(y = "Polarity", x = "Publisher") +
+  ggtitle("Polarity vs publisher")
+```
+
+Contactmusic.com is, by our analysis, the most positive news website (based on median story) that we had more than 1,000 samples for when looking at the polarity of different news websites. We can assume that sites with large whiskers have more positive and negative stories about certain topics, meaning that they may have the most subjective content, or just publish the most stories about large successes/disasters. All the publishers seem to be quite close when it comes to the polarity of their organization. The lack of outliers is very impressive, suggesting that many publishers are consistent within a given year on how positive or negative their average story is (without taking current events/disasters into account). Traditional large-scale news sites (CNN, Fox, Washington Post, New York Times) also seem to be less positive than more social news organizations (Huffington Post, Mashable). One interesting publisher is Buzzfeed which, while being what many would consider to be a social news site, falls between the Washington Post and CNN when it comes to positivity, far below its peers.
+
+```{r}
+ggplot(news25, aes(x = fct_reorder(publisher, subjectivity, .desc = TRUE), y = subjectivity, fill = publisher), outline = FALSE) +
+  geom_boxplot(outlier.shape = NA) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  theme(legend.position = "none") +
+  labs(y = "Subjectivity", x = "Publisher") +
+  ggtitle("Subjectivity vs publisher")
+```
+
+After looking at subjectivity data, it seems as if at least some of our most positive news organizations are also some of our most subjective. It is also worth mentioning that while subjectivity seems to vary slightly more than polarity, polarity is measured on a [-1, 1] interval while subjectivity is measured on a [0, 1] interval. The Inquisitr takes the top spot for subjectivity, while the divide between “social” news sites and large, widely recognized media organizations. Buzzfeed again is an interesting publisher, as it still sits at the bottom of the subjectivity scale among larger news sources like CNN or the Washington Post. Reuters at the bottom of the scale also has a much lower median subjectivity than other publishers, implying that they are the most subjective news organization in our data.
+
+```{r}
+summary(lm(polarity ~ subjectivity, data = news25))
+```
+
+We then decided to run a simple linear model on the dataset of stories since we only had two variables (subjectivity and polarity). While the regression coefficient is quite low and does imply some relationship between subjectivity and polarity, the R-squared value of our linear model (using subjectivity as the explanatory variable/polarity as the response) is 0.098, meaning that the scatter around the plotted line, at least for the articles, is too wide to use this model to predict much of anything.
+
+K-means analysis failed to yield any clusters of publishers that had common characteristics and PCA analysis did not make sense to use due to the only real numeric variables being subjectivity and polarity scores. We also noticed that sites that were treated more as “social news” sites, like, the Huffington Post, and ContactMusic.com tended to score higher on both subjectivity and polarity. Traditional news sites like CNN, Reuters, the Washington Post and the New York Times (closer to the center) tended to score low or middle of the pack when it came to polarity and when measuring subjectivity they all filed to the back of the pack. We decided to go back and run a linear model not on the stories themselves, but on the median polarity and subjectivity of publishers, since it was clear that some relationship probably existed.
+
+```{r}
+news_sum <- news %>%
+  group_by(publisher) %>%
+  summarize(number = n(), mediansubjectivity = median(subjectivity), medianpolarity = median(polarity), meansubjectivity = mean(subjectivity), meanpolarity = mean(polarity)) %>%
+  select(-publisher)
+
+ggplot(news_sum, aes(x = mediansubjectivity, y = medianpolarity)) +
+  geom_point(size = 3, alpha = .7) +
+  theme_bw() +
+  scale_color_brewer(type = "qual", palette = "Set1")
+```
+
+
+The included plot was the result of a scatterplot for the median subjectivity on the x-axis and median polarity on the y of publishers.
+
+```{r}
+summary(lm(medianpolarity ~ mediansubjectivity, data = news_sum))
+```
+
+
+After running a linear model on the variables that produced the above scatterplot, we then came to a result that had a p-value < 0.05, and an R-squared value of 0.1448. While this is far from a great model or an especially good correlation, it does show that there is potentially some relationship between polarity and subjectivity since the variable began to rise. The scatterplot agrees with this sentiment, and displays a potentially weak (albeit existing) relationship between the variables. After seeing this higher r-squared value on a sample size of only stories and not publishers, we began to wonder if there was more evidence hiding in the data.
+
+```{r}
+Q5BigRegression <- news %>%
+  group_by(publisher) %>%
+  summarize(
+    number = n(), mediansubjectivity = median(subjectivity),
+    medianpolarity = median(polarity)
+  ) %>%
+  filter(number >= 500)
+
+summary(lm(medianpolarity ~ mediansubjectivity, data = Q5BigRegression))
+```
+
+After halving our requirements for sample size to 500 articles for a given publisher, we ran a final large regression that included all the publications that we had data for. The r-squared value rose once again to 0.6846, and a p-value that remained far under 0.05. Given the visual evidence in our boxplots and multiple runs of linear regression, we feel that we have come to a cohesive answer to our question: more subjective organizations tend to publish more positive stories, while more objective organizations tend to publish negative ones. This is not to say that objective news providers peddle “doom and gloom”, but that there will probably be less emotion in an article if it is based primarily in fact. This lack of emotion is just that; it doesn’t imply the presence of negativity.

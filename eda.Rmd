@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r, message=FALSE, warning=FALSE}
+```{r, cache=TRUE, message=FALSE, warning=FALSE}
 set.seed(1337)
 library(tidyverse)
 library(dplyr)
@@ -17,21 +17,22 @@ library(readr)
 library(ggplot2)
 library(qdapDictionaries)
 
+```
+
+```{r, message=FALSE, warning=FALSE, results='hide',echo=FALSE}
+
 # Read the datasets we specified
 
 # Online News Popularity from https://archive.ics.uci.edu/ml/datasets/Online+News+Popularity
-# OnlineNewsPopularity <- rbind(read_csv("C:/Users/smg635/Downloads/data/OnlineNewsPopularityTraining.csv"), read_csv("C:/Users/smg635/Downloads/data/OnlineNewsPopularityTest.csv"))
 OnlineNewsPopularity <- rbind(read_csv("data/OnlineNewsPopularity/OnlineNewsPopularityTraining.csv"), read_csv("data/OnlineNewsPopularity/OnlineNewsPopularityTest.csv"))
 
 # All the news from https://www.kaggle.com/snapcrack/all-the-news
-# AllTheNews <- read_csv("C:/Users/smg635/Downloads/data/all-the-news.csv")
 AllTheNews <- read_csv("data/all-the-news/all-the-news.csv")
 
 # All the news from https://www.kaggle.com/uciml/news-aggregator-dataset
-# NewsAggregatorDataset <- read_csv("C:/Users/smg635/Downloads/data/news-aggregator-dataset.csv")
 NewsAggregatorDataset <- read_csv("data/news-aggregator-dataset.csv")
 
-# AllTheNews <- AllTheNews %>% select(1:month, day, day_of_week, url:polarity) # Switches order of columns
+
 AllTheNews <- rename(AllTheNews, text = content)
 
 # Remove the 22 NA rows from OnlineNewsPopularity
@@ -56,32 +57,38 @@ OnlineNewsPopularity$year <- as.numeric(format(OnlineNewsPopularity$date, format
 
 OnlineNewsPopularity$day_of_week <- 0 * OnlineNewsPopularity$weekday_is_monday + 1 * OnlineNewsPopularity$weekday_is_tuesday + 2 * OnlineNewsPopularity$weekday_is_wednesday + 3 * OnlineNewsPopularity$weekday_is_thursday + 4 * OnlineNewsPopularity$weekday_is_friday + 5 * OnlineNewsPopularity$weekday_is_saturday + 6 * OnlineNewsPopularity$weekday_is_sunday
 
-NewsAggregatorDataset <- rename(NewsAggregatorDataset, id = ID, title = TITLE, url = URL, publisher = PUBLISHER, category = CATEGORY, story = STORY, hostname = HOSTNAME, timestamp = TIMESTAMP, text = text, subjectivity = subjectivity, polarity = polarity)
+NewsAggregatorDataset <- rename(NewsAggregatorDataset, id = ID, title = TITLE, url = URL, publisher = PUBLISHER, category = CATEGORY, story = STORY, hostname = HOSTNAME, timestamp = TIMESTAMP)
 
-# NewsAggregatorDataset$subjectivity <- NA
-# NewsAggregatorDataset$polarity <- NA
+OnlineNewsPopularity$publisher <- "Mashable"
 
 # Remove the rows with no text from NewsAggregatorDataset
 NewsAggregatorDataset <- filter(NewsAggregatorDataset, is.na(NewsAggregatorDataset$text) == FALSE)
+```
 
-AllTheNews <- select(AllTheNews, title, date, year, month, day, day_of_week, url, textfixed, subjectivity, polarity)
-AllTheNews <- AllTheNews %>% rename(text=textfixed)
-OnlineNewsPopularity <- select(OnlineNewsPopularity, title, date, year, month, day, day_of_week, url, text, subjectivity, polarity)
-NewsAggregatorDataset <- select(NewsAggregatorDataset, title, date, year, month, day, day_of_week, url, text, subjectivity, polarity)
+```{r, echo = FALSE}
+AllTheNews <- dplyr::select(AllTheNews, title, date, year, month, day, day_of_week, publication, url, textfixed, subjectivity, polarity)
+AllTheNews <- AllTheNews %>% rename(text = textfixed, publisher = publication)
+OnlineNewsPopularity <- dplyr::select(OnlineNewsPopularity, title, date, year, month, day, day_of_week, url, publisher, textnolinks, subjectivity, polarity) %>% rename(text = textnolinks)
+NewsAggregatorDataset <- dplyr::select(NewsAggregatorDataset, title, date, year, month, day, day_of_week, publisher, url, text, subjectivity, polarity)
+```
 
-AllTheNews <- AllTheNews %>% sample_n(10000)
-OnlineNewsPopularity <- OnlineNewsPopularity %>% sample_n(10000)
-NewsAggregatorDataset <- NewsAggregatorDataset %>% sample_n(10000)
+```{r, echo = FALSE}
+#subset_size <- 39622
 
-AllTheNews2 <- AllTheNews
-AllTheNews3 <- AllTheNews
+#AllTheNews <- AllTheNews %>% sample_n(subset_size)
+#OnlineNewsPopularity <- OnlineNewsPopularity %>% sample_n(subset_size)
+#NewsAggregatorDataset <- NewsAggregatorDataset %>% sample_n(subset_size)
 
-# news = rbind(OnlineNewsPopularity, NewsAggregatorDataset)
 news <- rbind(AllTheNews, OnlineNewsPopularity, NewsAggregatorDataset)
+```
 
+```{r, echo = FALSE}
 news <- mutate(news,
-  numwords = map_int(str_split(text, boundary("word")), length),
-  lenwords = map(str_split(text, boundary("word")), ~ str_count(., "[A-z]")), avgLenWords = map_dbl(lenwords, mean)
+  words = str_split(text, boundary("word")),
+  numwords = map_int(words, length),
+  lenwords = map(words, ~ str_count(., "[A-z]")),
+  uniqueWords = map_int(words, n_distinct),
+  avgLenWords = map_dbl(lenwords, mean)
 )
 
 news$month <- as.factor(news$month)
@@ -92,8 +99,14 @@ news$year <- as.factor(news$year)
 
 news$date <- as.Date(news$date)
 
-news <- filter(news, (news$numwords >= 5) & (news$numwords <= 5000))
+news <- filter(news, (news$numwords >= 200) & (news$numwords <= 5000))
 ```
+
+```{r, echo=FALSE}
+top_pubs1 <- names(sort(table(news$publisher), decreasing = TRUE)[1:6])
+top_pubs2 <- names(sort(table(news$publisher), decreasing = TRUE)[7:12])
+```
+
 ### Initial Data Visualization/Summaries, Raw Counts
 
 We wanted to get a feel for our data by seeing what times many of the observations were published and to see if there were already any biases in the data we had collected. We found that a vast majority of our observations came from 2014, between the months of March and August, and an increase in the number of stories published on Monday/Tuesday while through the rest of the week output tends to taper off.
@@ -205,7 +218,7 @@ Then, we did a scatterplot of all of the dates as the-axis and the mean number o
 news %>%
   group_by(date) %>%
   summarize(n = n(), avgWordLength = mean(avgLenWords)) %>%
-  filter(date >= "2014-01-01") %>%
+  filter(date >= "2015-01-01") %>%
   ggplot(aes(x = date, y = avgWordLength)) +
   geom_point() +
   theme_bw() +
@@ -312,6 +325,7 @@ summary(lm(polarity ~ numwords + avgLenWords, data = news))
 
 summary(lm(subjectivity ~ numwords, data = news))
 ```
+
 ```{r}
 ggplot(news, aes(x = month, y = polarity, fill = month), outline = FALSE) +
   geom_boxplot(outlier.shape = NA) +
@@ -351,3 +365,4 @@ Theoretically we could find out the amount of multimedia an article had roughly 
 
 5)	Which news organizations publish the most “positive” stories and which ones publish the most negative ones?
 This question and question three have lots in common, but this one could be different as we dig deeper into the data. Specifically, we have discussed looking at the relationship between the subjectivity/polarity scores to determine if articles get more positive/negative as they become more "biased". We see the potential to do more than the simple summary statistic that this question called for, and intend to include this question alongside a broader discussion of polarity in the final presentation/report. We have discussed running a PCA analysis on this portion to determine the size of the relationship between variables like subjectivity and story length, but we will decide which direction to go with our analysis when we begin our final report.
+

@@ -1,0 +1,315 @@
+---
+title: "Final Presentation"
+author: "Robert Hall, Rees Braam, Sidharth Kulgod, Sam Galloway"
+date: "5/4/2020"
+output:
+  xaringan::moon_reader:
+    lib_dir: libs
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+---
+
+background-image: url(https://upload.wikimedia.org/wikipedia/commons/b/be/Sharingan_triple.svg)
+
+```{r setup, include=FALSE}
+options(htmltools.dir.version = FALSE)
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, error = FALSE, warning = FALSE, tidy = TRUE)
+```
+
+
+```{r, results='hide'}
+set.seed(1337)
+library(MASS)
+library(car)
+library(glmnet)
+library(rsample)
+library(performance)
+library(qdapDictionaries)
+library(tokenizers)
+library(tidytext)
+library(textdata)
+library(wordcloud2)
+library(xaringan)
+
+library(ggplot2)
+library(readr)
+library(tidyverse)
+library(dplyr)
+
+memory.limit(9999999999)
+```
+
+```{r, results='hide'}
+
+# Read the datasets we specified
+
+# Online News Popularity from https://archive.ics.uci.edu/ml/datasets/Online+News+Popularity
+OnlineNewsPopularity <- rbind(read_csv("data/OnlineNewsPopularity/OnlineNewsPopularityTraining.csv"), read_csv("data/OnlineNewsPopularity/OnlineNewsPopularityTest.csv"))
+
+# All the news from https://www.kaggle.com/snapcrack/all-the-news
+AllTheNews <- read_csv("data/all-the-news/all-the-news.csv")
+
+# All the news from https://www.kaggle.com/uciml/news-aggregator-dataset
+NewsAggregatorDataset <- read_csv("data/news-aggregator-dataset.csv")
+
+
+AllTheNews <- rename(AllTheNews, text = content)
+
+# Remove the 22 NA rows from OnlineNewsPopularity
+OnlineNewsPopularity <- filter(OnlineNewsPopularity, is.na(OnlineNewsPopularity$text) == FALSE)
+
+OnlineNewsPopularity <- rename(OnlineNewsPopularity, subjectivity = global_subjectivity, polarity = global_sentiment_polarity)
+
+# Remove the 6933 rows with date issues from AllTheNews
+AllTheNews <- filter(AllTheNews, AllTheNews$day_of_week != -1)
+
+AllTheNews$date <- as.Date(AllTheNews$date)
+NewsAggregatorDataset$date <- as.Date(NewsAggregatorDataset$date)
+OnlineNewsPopularity$date <- as.Date(OnlineNewsPopularity$date)
+
+NewsAggregatorDataset$day <- as.numeric(format(NewsAggregatorDataset$date, format = "%d"))
+NewsAggregatorDataset$month <- as.numeric(format(NewsAggregatorDataset$date, format = "%m"))
+NewsAggregatorDataset$year <- as.numeric(format(NewsAggregatorDataset$date, format = "%Y"))
+
+OnlineNewsPopularity$day <- as.numeric(format(OnlineNewsPopularity$date, format = "%d"))
+OnlineNewsPopularity$month <- as.numeric(format(OnlineNewsPopularity$date, format = "%m"))
+OnlineNewsPopularity$year <- as.numeric(format(OnlineNewsPopularity$date, format = "%Y"))
+
+OnlineNewsPopularity$day_of_week <- 0 * OnlineNewsPopularity$weekday_is_monday + 1 * OnlineNewsPopularity$weekday_is_tuesday + 2 * OnlineNewsPopularity$weekday_is_wednesday + 3 * OnlineNewsPopularity$weekday_is_thursday + 4 * OnlineNewsPopularity$weekday_is_friday + 5 * OnlineNewsPopularity$weekday_is_saturday + 6 * OnlineNewsPopularity$weekday_is_sunday
+
+NewsAggregatorDataset <- rename(NewsAggregatorDataset, id = ID, title = TITLE, url = URL, publisher = PUBLISHER, category = CATEGORY, story = STORY, hostname = HOSTNAME, timestamp = TIMESTAMP)
+
+OnlineNewsPopularity$publisher <- "Mashable"
+
+# Remove the rows with no text from NewsAggregatorDataset
+NewsAggregatorDataset <- filter(NewsAggregatorDataset, is.na(NewsAggregatorDataset$text) == FALSE)
+```
+
+```{r}
+AllTheNews <- dplyr::select(AllTheNews, title, date, year, month, day, day_of_week, publication, url, textfixed, subjectivity, polarity)
+AllTheNews <- AllTheNews %>% rename(text = textfixed, publisher = publication)
+OnlineNewsPopularity <- dplyr::select(OnlineNewsPopularity, title, date, year, month, day, day_of_week, url, publisher, textnolinks, subjectivity, polarity) %>% rename(text = textnolinks)
+NewsAggregatorDataset <- dplyr::select(NewsAggregatorDataset, title, date, year, month, day, day_of_week, publisher, url, text, subjectivity, polarity)
+```
+
+```{r}
+#subset_size <- 39622
+subset_size <- 1000
+
+AllTheNews <- AllTheNews %>% sample_n(subset_size)
+OnlineNewsPopularity <- OnlineNewsPopularity %>% sample_n(subset_size)
+NewsAggregatorDataset <- NewsAggregatorDataset %>% sample_n(subset_size)
+#AllTheNews <- sample(AllTheNews,1000,replace=TRUE)
+#OnlineNewsPopularity <- sample(OnlineNewsPopularity,1000,replace=TRUE)
+#NewsAggregatorDataset <- sample(NewsAggregatorDataset, 1000,replace=TRUE)
+news <- rbind(AllTheNews, OnlineNewsPopularity, NewsAggregatorDataset)
+```
+
+```{r}
+news <- mutate(news,
+  words = str_split(text, boundary("word")),
+  numWords = map_int(words, length),
+  lenwords = map(words, ~ str_count(., "[A-z]")),
+  uniqueWords = map_int(words, n_distinct),
+  avgLenWords = map_dbl(lenwords, mean)
+)
+
+news$month <- as.factor(news$month)
+news$numWords <- as.numeric(news$numWords)
+
+news$day_of_week <- as.factor(news$day_of_week)
+news$year <- as.factor(news$year)
+
+news$date <- as.Date(news$date)
+
+news <- filter(news, (news$numWords >= 200) & (news$numWords <= 5000))
+news <- filter(news, date >= 2014-01-01)
+```
+
+```{r}
+top_pubs1 <- names(sort(table(news$publisher), decreasing = TRUE)[1:9])
+top_pubs2 <- names(sort(table(news$publisher), decreasing = TRUE)[10:18])
+```
+
+---
+##Introduction
+[include some bullet points]
+[a list of stuff]
+
+---
+##Data cleaning
+[shorter than it is on report, talk about the process of how we cleaned up the articles we found online]
+
+[include picture of word cloud because that is super cash money for a visual presentation; just maaybe not the word cloud that had the giant trump lol]
+
+[briefly go over how we calculated sentiment/polarity columns]
+
+
+---
+
+###"Does the complexity of a news story (unique words, word length) have anything to do with the orientation (positive/negative) of the article?"
+
+```{r}
+polarityLM <- lm(polarity ~ numWords + avgLenWords, data = news)
+subjectivityLM <- lm(subjectivity ~ numWords + avgLenWords, data = news)
+
+avPlots(polarityLM)
+avPlots(subjectivityLM)
+```
+
+---
+
+```{r}
+summary(polarityLM)
+summary(subjectivityLM)
+```
+
+---
+
+###"Does the date or day of the week an article is posted have an effect on its length/complexity?"
+
+```{r}
+Q2_mod <- lm(numWords ~ day_of_week, data = news)
+
+summary(Q2_mod)
+```
+
+---
+
+```{r}
+news_words <- news %>% sample_n(nrow(news) * .1) %>%
+  unnest_tokens(word, text) %>%
+  count(day_of_week, word, sort = TRUE) %>%
+  bind_tf_idf(word, day_of_week, n) %>%
+  anti_join(tibble(word = Top200Words)) %>%
+  anti_join(stop_words)
+
+plot_newspaper <- news_words %>%
+  bind_tf_idf(word, day_of_week, n) %>%
+  mutate(word = fct_reorder(word, tf_idf)) %>%
+  mutate(day_of_week = factor(day_of_week, levels = c(
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6"
+  )))
+
+plot_newspaper %>%
+  group_by(day_of_week) %>%
+  top_n(5, tf_idf) %>%
+  ungroup() %>%
+  mutate(word = reorder(word, tf_idf)) %>%
+  ggplot(aes(word, tf_idf, fill = day_of_week)) +
+  geom_col(show.legend = FALSE) +
+  labs(x = NULL, y = "tf-idf") +
+  facet_wrap(~day_of_week, ncol = 2, scales = "free") +
+  coord_flip()
+```
+
+---
+
+###Did overall news organization sentiment go up or down over the sampled period?
+
+```{r}
+pub_mean_pol <- news %>%
+  select(date, year, month, day, day_of_week, publisher, text, subjectivity, polarity) %>%
+  filter(publisher %in% top_pubs1) %>%
+  group_by(publisher, month) %>%
+  summarise(mean_polarity = mean(polarity))
+
+pub_mean_pol
+```
+
+---
+
+```{r}
+pub_mean_pol %>% ggplot(aes(x = month, y = mean_polarity, fill = publisher)) +
+  facet_wrap(~publisher, scales = "free_y") +
+  labs(
+    y = "Mean polarity",
+    x = "Month"
+  ) +
+  ggtitle("Mean polarity by publisher by month for top publishers") +
+  geom_col(show.legend = FALSE)
+```
+
+---
+
+###"Which news organizations publish the most “positive” stories and which ones publish the most negative ones?"
+
+```{r}
+toppubs <- names(sort(table(news$publisher), decreasing = TRUE)[1:25])
+
+news25 <- news %>% filter(publisher %in% toppubs)
+
+news25 %>%
+  group_by(publisher) %>%
+  summarize(number = n(), mediansubjectivity = median(subjectivity), medianpolarity = median(polarity), meansubjectivity = mean(subjectivity), meanpolarity = mean(polarity))
+```
+
+---
+
+```{r}
+ggplot(news25, aes(x = fct_reorder(publisher, subjectivity, .desc = TRUE), y = subjectivity, fill = publisher), outline = FALSE) +
+  geom_boxplot(outlier.shape = NA) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  theme(legend.position = "none")
+```
+
+---
+
+```{r}
+ggplot(news25, aes(x = fct_reorder(publisher, polarity, .desc = TRUE), y = polarity, fill = publisher), outline = FALSE) +
+  geom_boxplot(outlier.shape = NA) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  ylim(-0.5, 0.75) +
+  theme(legend.position = "none")
+```
+
+---
+
+```{r}
+summary(lm(polarity ~ subjectivity, data = news25))
+```
+
+---
+
+```{r}
+news_sum <- news %>%
+  group_by(publisher) %>%
+  summarize(number = n(), mediansubjectivity = median(subjectivity), medianpolarity = median(polarity), meansubjectivity = mean(subjectivity), meanpolarity = mean(polarity)) %>%
+  select(-publisher)
+
+ggplot(news_sum, aes(x = mediansubjectivity, y = medianpolarity)) +
+  geom_point(size = 3, alpha = .7) +
+  theme_bw() +
+  scale_color_brewer(type = "qual", palette = "Set1")
+```
+
+---
+
+```{r}
+summary(lm(medianpolarity ~ mediansubjectivity, data = news_sum))
+```
+
+---
+
+```{r}
+Q5BigRegression <- news %>%
+  group_by(publisher) %>%
+  summarize(
+    number = n(), mediansubjectivity = median(subjectivity),
+    medianpolarity = median(polarity)
+  ) %>%
+  filter(number >= 500)
+summary(lm(medianpolarity ~ mediansubjectivity, data = Q5BigRegression))
+```
+
+---
+
+##Conclusion

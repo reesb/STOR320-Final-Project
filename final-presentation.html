@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="" xml:lang="">
+  <head>
+    <title>Final Presentation</title>
+    <meta charset="utf-8" />
+    <meta name="author" content="Robert Hall, Rees Braam, Sidharth Kulgod, Sam Galloway" />
+    <link href="libs/remark-css/default.css" rel="stylesheet" />
+    <link href="libs/remark-css/default-fonts.css" rel="stylesheet" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# Final Presentation
+### Robert Hall, Rees Braam, Sidharth Kulgod, Sam Galloway
+### 5/4/2020
+
+---
+
+
+background-image: url(https://upload.wikimedia.org/wikipedia/commons/b/be/Sharingan_triple.svg)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+---
+##Introduction
+[include some bullet points]
+[a list of stuff]
+
+---
+##Data cleaning
+[shorter than it is on report, talk about the process of how we cleaned up the articles we found online]
+
+[include picture of word cloud because that is super cash money for a visual presentation; just maaybe not the word cloud that had the giant trump lol]
+
+[briefly go over how we calculated sentiment/polarity columns]
+
+
+---
+
+###"Does the complexity of a news story (unique words, word length) have anything to do with the orientation (positive/negative) of the article?"
+
+![](final-presentation_files/figure-html/unnamed-chunk-7-1.png)&lt;!-- --&gt;![](final-presentation_files/figure-html/unnamed-chunk-7-2.png)&lt;!-- --&gt;
+
+---
+
+
+```
+## 
+## Call:
+## lm(formula = polarity ~ numWords + avgLenWords, data = news)
+## 
+## Residuals:
+##      Min       1Q   Median       3Q      Max 
+## -0.31205 -0.05286 -0.00229  0.04825  0.40931 
+## 
+## Coefficients:
+##               Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)  3.360e-01  3.059e-02  10.981  &lt; 2e-16 ***
+## numWords    -2.856e-06  3.983e-06  -0.717    0.473    
+## avgLenWords -4.921e-02  6.423e-03  -7.661 2.76e-14 ***
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## Residual standard error: 0.08409 on 2181 degrees of freedom
+## Multiple R-squared:  0.02634,	Adjusted R-squared:  0.02545 
+## F-statistic: 29.51 on 2 and 2181 DF,  p-value: 2.271e-13
+```
+
+```
+## 
+## Call:
+## lm(formula = subjectivity ~ numWords + avgLenWords, data = news)
+## 
+## Residuals:
+##      Min       1Q   Median       3Q      Max 
+## -0.44886 -0.05009  0.00065  0.04981  0.30987 
+## 
+## Coefficients:
+##               Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)  6.696e-01  3.063e-02  21.863  &lt; 2e-16 ***
+## numWords     6.021e-06  3.987e-06   1.510    0.131    
+## avgLenWords -5.031e-02  6.430e-03  -7.824 7.89e-15 ***
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## Residual standard error: 0.08417 on 2181 degrees of freedom
+## Multiple R-squared:  0.0285,	Adjusted R-squared:  0.0276 
+## F-statistic: 31.99 on 2 and 2181 DF,  p-value: 2.034e-14
+```
+
+---
+
+###"Does the date or day of the week an article is posted have an effect on its length/complexity?"
+
+
+```
+## 
+## Call:
+## lm(formula = numWords ~ day_of_week, data = news)
+## 
+## Residuals:
+##    Min     1Q Median     3Q    Max 
+## -453.3 -295.3 -134.3  151.4 4320.4 
+## 
+## Coefficients:
+##              Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)  637.5073    24.4757  26.047   &lt;2e-16 ***
+## day_of_week1 -42.8398    33.5493  -1.277    0.202    
+## day_of_week2  -0.9396    33.4890  -0.028    0.978    
+## day_of_week3  13.5667    34.3665   0.395    0.693    
+## day_of_week4 -36.1017    35.2342  -1.025    0.306    
+## day_of_week5   5.0549    39.2484   0.129    0.898    
+## day_of_week6  18.7904    41.7935   0.450    0.653    
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## Residual standard error: 452 on 2177 degrees of freedom
+## Multiple R-squared:  0.002445,	Adjusted R-squared:  -0.0003045 
+## F-statistic: 0.8892 on 6 and 2177 DF,  p-value: 0.5018
+```
+
+---
+
+![](final-presentation_files/figure-html/unnamed-chunk-10-1.png)&lt;!-- --&gt;
+
+---
+
+###Did overall news organization sentiment go up or down over the sampled period?
+
+
+```
+## # A tibble: 107 x 3
+## # Groups:   publisher [9]
+##    publisher month mean_polarity
+##    &lt;chr&gt;     &lt;fct&gt;         &lt;dbl&gt;
+##  1 Atlantic  1            0.108 
+##  2 Atlantic  2            0.0852
+##  3 Atlantic  3            0.120 
+##  4 Atlantic  4            0.0711
+##  5 Atlantic  5            0.112 
+##  6 Atlantic  6            0.125 
+##  7 Atlantic  7            0.0709
+##  8 Atlantic  8            0.146 
+##  9 Atlantic  9            0.101 
+## 10 Atlantic  10           0.116 
+## # ... with 97 more rows
+```
+
+---
+
+![](final-presentation_files/figure-html/unnamed-chunk-12-1.png)&lt;!-- --&gt;
+
+---
+
+###"Which news organizations publish the most “positive” stories and which ones publish the most negative ones?"
+
+
+```
+## # A tibble: 25 x 6
+##    publisher number mediansubjectiv~ medianpolarity meansubjectivity
+##    &lt;chr&gt;      &lt;int&gt;            &lt;dbl&gt;          &lt;dbl&gt;            &lt;dbl&gt;
+##  1 Android ~      5            0.517         0.192             0.518
+##  2 Atlantic      57            0.431         0.0979            0.427
+##  3 Breitbart    132            0.418         0.0529            0.424
+##  4 Business~     38            0.410         0.0723            0.410
+##  5 Business~      6            0.418         0.121             0.433
+##  6 Buzzfeed~     29            0.411         0.0496            0.409
+##  7 Christia~      5            0.446         0.117             0.425
+##  8 CNN           63            0.417         0.0722            0.416
+##  9 Daily Ma~     11            0.456         0.145             0.464
+## 10 Financia~      5            0.394         0.0645            0.385
+## # ... with 15 more rows, and 1 more variable: meanpolarity &lt;dbl&gt;
+```
+
+---
+
+![](final-presentation_files/figure-html/unnamed-chunk-14-1.png)&lt;!-- --&gt;
+
+---
+
+![](final-presentation_files/figure-html/unnamed-chunk-15-1.png)&lt;!-- --&gt;
+
+---
+
+
+```
+## 
+## Call:
+## lm(formula = polarity ~ subjectivity, data = news25)
+## 
+## Residuals:
+##      Min       1Q   Median       3Q      Max 
+## -0.36375 -0.04836  0.00459  0.04716  0.40388 
+## 
+## Coefficients:
+##              Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)  -0.04016    0.01027   -3.91 9.62e-05 ***
+## subjectivity  0.31786    0.02324   13.68  &lt; 2e-16 ***
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## Residual standard error: 0.08163 on 1613 degrees of freedom
+## Multiple R-squared:  0.1039,	Adjusted R-squared:  0.1034 
+## F-statistic:   187 on 1 and 1613 DF,  p-value: &lt; 2.2e-16
+```
+
+---
+
+![](final-presentation_files/figure-html/unnamed-chunk-17-1.png)&lt;!-- --&gt;
+
+---
+
+
+```
+## 
+## Call:
+## lm(formula = medianpolarity ~ mediansubjectivity, data = news_sum)
+## 
+## Residuals:
+##      Min       1Q   Median       3Q      Max 
+## -0.36047 -0.03800 -0.00343  0.03482  0.25440 
+## 
+## Coefficients:
+##                    Estimate Std. Error t value Pr(&gt;|t|)    
+## (Intercept)        -0.06626    0.02074  -3.195   0.0015 ** 
+## mediansubjectivity  0.40647    0.04652   8.737   &lt;2e-16 ***
+## ---
+## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+## 
+## Residual standard error: 0.06964 on 420 degrees of freedom
+## Multiple R-squared:  0.1538,	Adjusted R-squared:  0.1518 
+## F-statistic: 76.34 on 1 and 420 DF,  p-value: &lt; 2.2e-16
+```
+
+---
+
+
+```
+## 
+## Call:
+## lm(formula = medianpolarity ~ mediansubjectivity, data = Q5BigRegression)
+## 
+## Residuals:
+## ALL 1 residuals are 0: no residual degrees of freedom!
+## 
+## Coefficients: (1 not defined because of singularities)
+##                    Estimate Std. Error t value Pr(&gt;|t|)
+## (Intercept)          0.1232         NA      NA       NA
+## mediansubjectivity       NA         NA      NA       NA
+## 
+## Residual standard error: NaN on 0 degrees of freedom
+```
+
+---
+
+##Conclusion
+    </textarea>
+<style data-target="print-only">@media screen {.remark-slide-container{display:block;}.remark-slide-scaler{box-shadow:none;}}</style>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "github",
+"highlightLines": true,
+"countIncrementalSlides": false
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function(d) {
+  var s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})(document);
+
+(function(d) {
+  var el = d.getElementsByClassName("remark-slides-area");
+  if (!el) return;
+  var slide, slides = slideshow.getSlides(), els = el[0].children;
+  for (var i = 1; i < slides.length; i++) {
+    slide = slides[i];
+    if (slide.properties.continued === "true" || slide.properties.count === "false") {
+      els[i - 1].className += ' has-continuation';
+    }
+  }
+  var s = d.createElement("style");
+  s.type = "text/css"; s.innerHTML = "@media print { .has-continuation { display: none; } }";
+  d.head.appendChild(s);
+})(document);
+// delete the temporary CSS (for displaying all slides initially) when the user
+// starts to view slides
+(function() {
+  var deleted = false;
+  slideshow.on('beforeShowSlide', function(slide) {
+    if (deleted) return;
+    var sheets = document.styleSheets, node;
+    for (var i = 0; i < sheets.length; i++) {
+      node = sheets[i].ownerNode;
+      if (node.dataset["target"] !== "print-only") continue;
+      node.parentNode.removeChild(node);
+    }
+    deleted = true;
+  });
+})();
+(function() {
+  "use strict"
+  // Replace <script> tags in slides area to make them executable
+  var scripts = document.querySelectorAll(
+    '.remark-slides-area .remark-slide-container script'
+  );
+  if (!scripts.length) return;
+  for (var i = 0; i < scripts.length; i++) {
+    var s = document.createElement('script');
+    var code = document.createTextNode(scripts[i].textContent);
+    s.appendChild(code);
+    var scriptAttrs = scripts[i].attributes;
+    for (var j = 0; j < scriptAttrs.length; j++) {
+      s.setAttribute(scriptAttrs[j].name, scriptAttrs[j].value);
+    }
+    scripts[i].parentElement.replaceChild(s, scripts[i]);
+  }
+})();
+(function() {
+  var links = document.getElementsByTagName('a');
+  for (var i = 0; i < links.length; i++) {
+    if (/^(https?:)?\/\//.test(links[i].getAttribute('href'))) {
+      links[i].target = '_blank';
+    }
+  }
+})();
+// adds .remark-code-has-line-highlighted class to <pre> parent elements
+// of code chunks containing highlighted lines with class .remark-code-line-highlighted
+(function(d) {
+  const hlines = d.querySelectorAll('.remark-code-line-highlighted');
+  const preParents = [];
+  const findPreParent = function(line, p = 0) {
+    if (p > 1) return null; // traverse up no further than grandparent
+    const el = line.parentElement;
+    return el.tagName === "PRE" ? el : findPreParent(el, ++p);
+  };
+
+  for (let line of hlines) {
+    let pre = findPreParent(line);
+    if (pre && !preParents.includes(pre)) preParents.push(pre);
+  }
+  preParents.forEach(p => p.classList.add("remark-code-has-line-highlighted"));
+})(document);</script>
+
+<script>
+slideshow._releaseMath = function(el) {
+  var i, text, code, codes = el.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+};
+slideshow._releaseMath(document);
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-MML-AM_CHTML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>
